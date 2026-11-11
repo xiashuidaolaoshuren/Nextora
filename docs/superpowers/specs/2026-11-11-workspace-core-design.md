@@ -269,7 +269,7 @@ These are facts or choices not settled during design. They must be resolved in p
 
 ## 15. What comes next
 
-The next specs, in the suggested order: materials (tailored CV and cover letter with evidence-linked edits), capture and discovery (browser extension and permitted sources), autofill, interview. Each depends on the data model here, so changes to `evidence_item`, `cv_version`, `job` and `application` should be treated as interface changes.
+See the [roadmap](../../roadmap.md) for scope, dependencies and decision gates of each later sub-project. The next specs, in the suggested order: materials (tailored CV and cover letter with evidence-linked edits), capture and discovery (browser extension and permitted sources), autofill, interview. Each depends on the data model here, so changes to `evidence_item`, `cv_version`, `job` and `application` should be treated as interface changes.
 
 ### 15.1 Future agent constraints
 
