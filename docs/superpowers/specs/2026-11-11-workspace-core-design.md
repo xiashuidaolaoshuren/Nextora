@@ -22,7 +22,7 @@ The first user is the author. The product is designed so that other users can be
 | Backend | Java (current LTS) with Spring Boot, TypeScript on the frontend |
 | Database | PostgreSQL, with Flyway migrations |
 | AI provider | Provider-agnostic gateway, Claude as default |
-| Work rights | A profile field the user enters; no hard-coded status |
+| Work permission | Self-reported permission, separate from visa status; neither is a legal determination |
 | Interface language | English only in this spec |
 | Job text language | English and Chinese job descriptions and CVs are handled |
 
@@ -42,13 +42,14 @@ The first user is the author. The product is designed so that other users can be
 
 ## 4. Principles
 
-1. **Tracking works without a model.** Any model failure degrades to manual entry, never to a blocked workflow.
-2. **Eligibility is code, not model judgment.** The model extracts facts from the job text; deterministic code compares them with the profile.
-3. **Unknown is never guessed.** A check that cannot be decided returns `unknown`, not pass or fail.
-4. **Only confirmed evidence is used.** Matching never cites unconfirmed, model-suggested evidence.
-5. **Fit is a mapping, not a percentage.** Show which requirement is supported by which evidence, and which has none.
-6. **Original text is preserved.** The pasted job description and uploaded CV are stored unchanged alongside anything derived from them.
-7. **Multi-user ready, single user today.** Every user-owned record carries a `user_id`; requests resolve a current user through one seam.
+1. **Tracking works without a model.** Manual structured entry and deterministic checks remain available without a provider.
+2. **Eligibility is advisory and distinct from preferences.** Deterministic checks compare recognized job conditions with self-reported profile facts; they are not legal advice or a hiring decision. Preferences are reported separately, never as eligibility failures.
+3. **Unknown is never guessed.** Missing profile information or an unrecognized or unsupported condition yields `unknown`. An unreviewed model-extracted condition can fail only if its quote is verbatim in the original job text and deterministic code recognizes the quoted condition.
+4. **Only confirmed evidence is used.** Confirmed evidence belongs to the candidate independently of any CV; imports only propose evidence.
+5. **Fit is a mapping, not a score.** Assess the candidate's confirmed evidence, not the submitted CV, without a fit band or percentage. Invalid citations are unable to assess, not evidence of no support.
+6. **Original text is preserved.** The pasted job description and uploaded CV are stored unchanged alongside derived data until the user deletes them.
+7. **Local by default.** Uploads and pastes alone never call a provider; each provider action requires an explicit user initiation.
+8. **Multi-user ready, single user today.** Every user-owned record carries a `user_id`; requests resolve a current user through one seam.
 
 ## 5. Architecture
 
@@ -56,7 +57,7 @@ The first user is the author. The product is designed so that other users can be
 flowchart LR
     UI["React app"] -->|"REST + OpenAPI"| API["Spring Boot application"]
     API --> DB[("PostgreSQL")]
-    API --> GW["LLM gateway"]
+    API -->|"explicit user-initiated action only"| GW["LLM gateway"]
     GW --> LLM["Model provider (Claude default)"]
 ```
 
@@ -89,7 +90,8 @@ All tables have `id`, `user_id`, `created_at`, `updated_at` unless noted.
 
 **`candidate_profile`** (one per user)
 - `career_stage` (student, graduate, experienced)
-- `work_rights` (enumerated status such as `student_visa`, `iang`, `gep`, `permanent_resident`, `other`, `unspecified`)
+- Self-reported `work_permission` facts, including jurisdiction and any known restrictions or sponsorship need; unknown facts remain unspecified
+- `visa_status` (nullable, self-reported and separate from permission; never infer permission solely from it)
 - `languages` (list of language plus level, for Cantonese, English, Mandarin, and others)
 - `preferred_districts` (list), `work_modes` (onsite, hybrid, remote)
 - `salary_floor_hkd` (nullable), `target_roles` (list)
@@ -97,32 +99,32 @@ All tables have `id`, `user_id`, `created_at`, `updated_at` unless noted.
 **`evidence_item`**
 - `kind` (experience, project, education, skill, certification)
 - `title`, `description`, `start_date`, `end_date`, `organization`
-- `source` (`manual`, `cv_import`) and `cv_version_id` (nullable; the version it was suggested from)
+- `source` (`manual`, `cv_import`) and `cv_version_id` (nullable provenance only; deleting a CV does not delete confirmed evidence)
 - `status` (`suggested`, `confirmed`, `rejected`)
 
-**`cv_version`** (immutable once saved)
+**`cv_version`** (file content immutable once saved; metadata editable)
 - `file_name`, `content_type`, `file_blob_ref`, `extracted_text`
-- `label`, `parent_version_id` (nullable)
+- `label`, `parent_version_id` (nullable), archive state; a permanently deleted version retains only a minimal deletion marker for references
 
 **`job`**
 - `raw_text`, `source_url` (nullable), `sanitized_text`
-- `status` (`extracted`, `needs_review`)
+- `status` (`manual`, `extracted`, `needs_review`)
 - Extracted fields, each nullable and user-correctable: `title`, `hiring_company`, `poster_name`, `poster_type` (employer, recruiter, unknown), `district`, `work_mode`, `salary_min_hkd`, `salary_max_hkd`, `deadline`, `employment_type`, `experience_level`
 - `language_requirements` (list of language, level, and the quoted sentence)
 - `work_rights_restrictions` (list of restriction type and the quoted sentence)
 - `requirements` (list of requirement text, `must_have` or `nice_to_have`)
-- `field_origin` per extracted field (`model` or `user`)
+- `field_origin` and review state per field; source quote and verification state for extracted conditions
 
-**`match_result`** (one per job per profile/evidence snapshot; recomputed when inputs change)
+**`match_result`** (snapshot per job and input revision; changes mark it stale, never trigger a provider call)
 - `eligibility_checks`: list of `{dimension, outcome: pass|fail|unknown, job_quote, profile_value}`
-- `requirement_mappings`: list of `{requirement_id, support: direct|transferable|none, evidence_ids, note}`
-- `fit_band` (`strong`, `moderate`, `weak`, `insufficient_data`)
-- `computed_at`, `inputs_hash`, `model_call_id`
+- `preference_comparisons`: separate informational matches, mismatches or unknowns
+- `requirement_mappings`: list of `{requirement_id, support: direct|transferable|none|unable_to_assess, evidence_ids, note}`
+- `computed_at`, `inputs_hash`, nullable `model_call_id`; no aggregate fit band
 
-**`application`**
-- `job_id`, `cv_version_id` (nullable)
+**`application`** (one record per attempt, many attempts may reference one job)
+- `job_id`, nullable submitted `cv_version_id` or retained deletion marker
 - `status` (`saved`, `preparing`, `applied`, `interviewing`, `offer`, `rejected`, `withdrawn`)
-- `applied_at`, `deadline`, `notes`
+- `applied_at`, application-specific `deadline`, `notes`
 
 **`application_status_event`** (append-only)
 - `application_id`, `from_status`, `to_status`, `occurred_at`, `note`
@@ -134,12 +136,12 @@ All tables have `id`, `user_id`, `created_at`, `updated_at` unless noted.
 
 ### 7.1 Profile and eligibility
 
-The user fills in the profile form. Work rights is a required choice with `unspecified` allowed; when unspecified, work-rights checks return `unknown`. The profile is editable at any time and changes mark existing match results as stale.
+The user may leave any profile fact unspecified; missing information produces `unknown`, not a negative inference. Work permission is self-reported separately from visa status, with jurisdiction and restrictions where known. No visa label alone proves permission or sponsorship need. Profile edits mark affected match results stale.
 
 ### 7.2 Evidence library and CV import
 
 1. The user uploads a CV (PDF or Word). The backend stores the file and extracts text with a Java document-parsing library.
-2. The `llm` gateway is asked to propose evidence items from the extracted text. Proposed items are saved as `suggested` with a link to the CV version.
+2. Only when the user explicitly requests suggestions does the `llm` gateway propose evidence from extracted text. Proposed items are saved as `suggested` with provenance linking to the CV version.
 3. The user reviews each suggestion: confirm, edit then confirm, or reject. Only `confirmed` items enter matching.
 4. The user can also add evidence items by hand.
 
@@ -147,55 +149,40 @@ If text extraction yields little or no text (for example a scanned PDF), the upl
 
 ### 7.3 CV versions
 
-Each upload creates a new `cv_version`. Versions are never edited. The user labels them and can mark one as the default for new applications. Diffing and generated tailored versions are a later spec.
+Each upload creates a new `cv_version` with immutable file content. The user can edit its label and select a default for new applications; a default is only a suggestion, not proof of submission. Archive is the default removal action. Permanent deletion requires explicit confirmation, removes the file and extracted content, and retains a minimal deleted-version marker so application history remains intelligible; confirmed evidence survives independently. Diffing and generated tailored versions are a later spec.
 
 ### 7.4 Job intake
 
-1. The user pastes a job description, with an optional link. If the normalized text matches an existing job, the user is warned and offered the existing job instead of creating a duplicate.
-2. The text is sanitized: control and zero-width characters removed, and text that appears to address the model (for example instructions to ignore previous instructions) is flagged and excluded from what the model sees. The original is kept.
-3. The `llm` gateway extracts the structured fields in Section 6. Each extracted field that depends on a statement in the text must include the quoted source sentence.
-4. The user sees the extracted fields next to the original text and can correct any field. A corrected field has `field_origin = user` and is not overwritten by later re-extraction.
-5. If extraction fails validation after retries, the job is saved as `needs_review` with the raw text and empty fields for manual entry.
+1. The user can create a job independently of any application, by pasting text or entering structured fields manually. An optional source link is not fetched automatically. Identical normalized text warns and offers the existing job, but never blocks creation of another.
+2. Paste and save are local only. Text sent for a later model action is sanitized: control and zero-width characters are removed and apparent instructions to the model are flagged and excluded where recognized. The original is kept; sanitization is not a security guarantee.
+3. Only on explicit user request does the `llm` gateway extract structured fields. Each extracted field dependent on the text includes a quoted source sentence; code verifies quotes against the original.
+4. The user sees fields beside the original and can correct them. User corrections are not overwritten by later extraction. Job and application views show current corrected job fields, not a frozen job snapshot.
+5. If extraction fails validation after retries, the saved job remains available for manual entry and review.
 
 The extractor separates the poster (employer or recruiter) from the hiring company when the text allows it, and returns `unknown` otherwise.
 
 ### 7.5 Matching
 
-Matching produces two independent outputs for a job.
+Matching presents separate advisory eligibility checks, preference comparisons and candidate fit mappings. None blocks tracking or determines legal eligibility.
 
-**Eligibility checks (deterministic).** Code compares the profile with the job's structured fields across these dimensions:
+**Eligibility checks (deterministic).** Compare explicit job conditions with relevant self-reported facts, including work permission and required language ability, using a small versioned rule table. Missing job conditions, missing profile facts, incomparable language levels and ambiguous or unrecognized conditions yield `unknown`; an omitted language is not proof of inability. Never derive permission from visa status. A fail requires a recognized condition and enough explicitly supplied facts to establish a contradiction. An unreviewed model-extracted condition may fail only when its source quote is verbatim in the original and deterministic recognition of that quote establishes the condition; otherwise it is `unknown`. User-reviewed or manually entered conditions must also be deterministically interpretable. Display the basis and source where available, and clearly label results advisory.
 
-| Dimension | Profile | Job | Fail when | Unknown when |
-|---|---|---|---|---|
-| Work rights | `work_rights` | `work_rights_restrictions` | The job states a restriction the status does not satisfy | Profile is `unspecified` or the job states nothing |
-| Languages | `languages` | `language_requirements` | A required language is absent or below the required level | A level is not stated |
-| Location | `preferred_districts` | `district` | Never fails; reports mismatch as informational | Job district missing |
-| Work mode | `work_modes` | `work_mode` | Job mode not in profile modes | Job mode missing |
-| Salary | `salary_floor_hkd` | `salary_*` | Maximum disclosed salary is below the floor | Salary not disclosed |
-| Employment type and level | `career_stage` | `employment_type`, `experience_level` | Level or type is clearly outside the stage | Not stated |
+**Preference comparisons.** Location, work mode, salary, employment type and desired level are informational comparisons against explicit preferences, not eligibility checks. Missing or incomparable values are unknown; career stage alone does not imply a preference or exclusion.
 
-Each check records the job quote that caused it. The exact rules live in a small, versioned rule table in code, not in a prompt.
+**Fit mapping (model-assisted, code-verified).** On explicit request, send job requirements and confirmed candidate evidence to the gateway. For each requirement return `direct`, `transferable` or `none`, cited evidence IDs and a short note. Verify each cited ID exists, belongs to the user and is confirmed. Invalid citations make that mapping `unable_to_assess`, not `none`; log the error without sensitive text. Missing requirements, missing evidence, invalid responses or provider failure must be presented as unable to assess where applicable, not as an unsupported requirement. These mappings assess the candidate, not whether any particular submitted CV contains the evidence. Show mappings without a band or percentage.
 
-Work rights is the one dimension where the author's own status matters most; the rule table for it is the first thing to review in the implementation plan, because wrong results here are the costliest.
-
-**Fit mapping (model-assisted, code-verified).**
-1. For each requirement, the `llm` gateway is given the requirement and the list of confirmed evidence items (id, title, description) and returns `direct`, `transferable` or `none`, with the evidence ids it relied on and a one-line note.
-2. Code verifies that every cited id exists, belongs to the user, and is `confirmed`. A mapping that cites an invalid id is downgraded to `none` and logged.
-3. Code derives `fit_band` from the verified mappings: weights for `must_have` and `nice_to_have`, and thresholds defined as constants with tests. When the job has no extracted requirements or the user has no confirmed evidence, the band is `insufficient_data`.
-
-The UI shows the band alongside the mappings and eligibility checks. It does not show a numeric percentage.
-
-Match results are recomputed when the profile, evidence set, or job fields change; stale results are labeled until recomputed.
+Profile, confirmed evidence and job changes mark affected results stale. Display stale results as such; refresh deterministic checks locally on user request, and refresh model-assisted mappings only on a separate explicit user-initiated provider action. No automatic provider call occurs on changes.
 
 ### 7.6 Application tracker
 
-The user creates an application from a job, picks a CV version, and moves it through the statuses. Each status change appends a status event. The list view can filter by status and sort by deadline. Overdue and upcoming deadlines are highlighted. There are no notifications in this spec.
+A job may exist without an application and may have multiple applications, one per actual attempt. The user can move directly to any appropriate status, skipping intermediate statuses; each actual change appends one event with the true previous and new statuses and time, without inventing skipped history. Record the submitted CV version when known and pin that version to the attempt; otherwise leave it unknown. Later default changes do not alter the pinned version. Show current corrected job fields alongside application-specific data, not a frozen copy. The list can filter by status and sort by deadline; overdue and upcoming deadlines are highlighted. No notifications are included.
 
 ### 7.7 LLM gateway
 
 The only module that imports a provider client. It exposes task-shaped methods (extract job fields, propose evidence from CV text, map requirements to evidence), not a generic chat call.
 
 - **Provider interface:** one interface with a Claude implementation. Adding another provider means adding an implementation, not changing callers.
+- **Consent boundary:** each provider-backed action requires an explicit user request; identify the provider, purpose and categories of data to be sent before the action. Retries are bounded within that same action; uploads, pastes and input changes never initiate calls.
 - **Structured output:** each task defines a schema; responses are parsed and validated, with a bounded number of retries (default 2) on invalid output.
 - **Prompts:** stored as versioned templates; the version is recorded on every call.
 - **Logging:** every call writes an `llm_call_log` row. Job and CV text are not written to application logs.
@@ -211,9 +198,9 @@ React, TypeScript, Tailwind, shadcn/ui, with a client generated from the OpenAPI
 
 1. Profile
 2. Evidence library (list, confirm or reject suggestions, add)
-3. CV versions (upload, label, default)
-4. Jobs (paste, review extracted fields beside raw text)
-5. Job detail with match view (eligibility checks, requirement-to-evidence mappings, fit band)
+3. CV versions (upload, label, default, archive, confirm permanent deletion)
+4. Jobs (paste or manual entry, optional explicit extraction, review fields beside raw text)
+5. Job detail with advisory eligibility, separate preference comparisons and candidate evidence mappings, including stale and unable-to-assess states
 6. Applications (list, detail, status history)
 
 Wireframes are not part of this spec; they can be produced during planning if needed.
@@ -224,24 +211,31 @@ Wireframes are not part of this spec; they can be produced during planning if ne
 |---|---|
 | Model call fails or times out | Retry within limits, then save the job as `needs_review` or return the action as unavailable; nothing else blocked |
 | Model returns invalid structure | Retry, then manual entry path |
-| Model cites unknown evidence | Mapping downgraded to `none`, logged |
+| Model cites invalid, foreign or unconfirmed evidence | Mapping is `unable_to_assess`, logged without sensitive content |
 | No API key | "No model" mode |
 | CV has no extractable text | Keep file, skip suggestions, prompt for manual evidence |
-| Duplicate job paste (same normalized text) | Warn and offer to open the existing job |
-| Match inputs changed | Result marked stale until recomputed |
+| Duplicate job paste (same normalized text) | Warn and offer the existing job, but allow another |
+| Match inputs changed | Mark result stale; refresh only on user request |
+| Unverified quote or unrecognized extracted condition | Eligibility is `unknown`, never fail on that condition |
 
 ## 11. Privacy and data handling
 
 - All data is stored in the local PostgreSQL database and the local file store.
-- Job and CV text are sent to the configured model provider for the three model tasks; this must be stated on the first-run screen and in the README. "Local-first" does not mean "nothing leaves the machine".
-- The app supports export of all user data and deletion of all user data. The exact formats are decided in the plan.
+- Uploading or pasting stores and processes data locally only. Only explicit per-action requests send the data needed for that task to the configured provider: job text for extraction, CV text for evidence suggestions, and requirements and confirmed evidence for fit mapping. Explain the destination and data categories before each action and disclose this on first run and in the README. Provider retention and processing are governed by its terms; local deletion cannot guarantee provider deletion.
+- Export is a portable data export, including user records and available CV files, not a backup/restore or import feature. The app supports deletion of all local user data, including files and deletion markers; ordinary permanent CV deletion retains the minimal marker described above. Exact export formats are decided in planning.
 - No telemetry.
+
+### Security boundaries
+
+Treat pasted jobs, uploaded files and model responses as untrusted. Parse files with bounded size and resource limits; validate model schemas, source quotes and evidence ownership server-side. Prompt-injection filtering is best effort, not a trust boundary: never grant source text authority over system instructions or actions, and never execute model output. Keep credentials in environment configuration, never logs or exports. Local deployment is single-user, not an authentication boundary; do not expose it to untrusted networks without additional security.
 
 ## 12. Testing strategy
 
 Follows the project's test-first rule for new behavior.
 
-- **Test-first, deterministic code:** eligibility rule table, fit-band derivation, evidence-id verification, sanitization, status transitions, current-user scoping.
+- **Test-first, deterministic code:** eligibility rule table, exact quote verification and recognition, missing profile facts, separation of permission and visa status and of preferences and eligibility, evidence ownership and confirmation, sanitization, skipped-status history, current-user scoping and stale detection.
+- **Privacy and lifecycle:** assert upload, paste and input edits make no provider calls; each explicit provider action sends only its needed inputs. Test duplicate warnings without blocking, independent jobs and multiple attempts, submitted CV pinning, archive and deletion markers, evidence survival, corrected job fields, and portable export without a restore promise.
+- **Fit failures:** invalid, foreign or unconfirmed citations yield `unable_to_assess`, not `none`; empty inputs and provider errors do not fabricate a fit result. Verify refresh is user-initiated.
 - **Integration:** Testcontainers with real PostgreSQL for persistence and migrations.
 - **Model-dependent modules:** unit tests against recorded provider responses and fakes; no live model calls in the normal test run.
 - **Extraction quality set:** a small collection of real Hong Kong job descriptions (English, Traditional Chinese, mixed) with expected fields, run on demand against the real model to track quality. Source and storage of this set must respect the original postings' terms; use postings the author has permission to keep or write representative ones.
@@ -249,11 +243,13 @@ Follows the project's test-first rule for new behavior.
 
 ## 13. Success criteria
 
-1. The author can run the full loop on at least one real application: upload CV, confirm evidence, paste a job, see correct eligibility flags and a fit mapping, create and update the application.
-2. No match result cites unconfirmed or nonexistent evidence.
-3. With the model disabled, the author can still create jobs manually and track applications.
-4. A fresh checkout starts with a single Docker Compose command and a documented environment file.
-5. Adding a second user requires replacing the `CurrentUser` implementation, with no query changes.
+1. The author can run a real application loop, explicitly requesting any provider assistance: upload a CV, confirm candidate evidence, create a job, review advisory eligibility and preference results and candidate fit mappings, and track an attempt.
+2. Eligibility is deterministic and conservative: missing information and unverified or unrecognized extracted conditions are unknown; preferences never fail eligibility. Invalid evidence citations are unable to assess, never `none`.
+3. Without a model, manual structured jobs, deterministic checks, evidence entry and application tracking work. Uploads and pastes make no provider calls.
+4. Jobs can exist independently and have multiple attempts; skipped statuses have truthful history, and the submitted CV is pinned when known. CV deletion preserves a marker and confirmed evidence.
+5. Changes mark results stale without automatic provider calls; current corrected job fields appear in application views. Portable export is available without a restore claim.
+6. A fresh checkout starts with a single Docker Compose command and a documented environment file.
+7. Adding a second user requires replacing the `CurrentUser` implementation, with no query changes.
 
 ## 14. Unresolved items
 
@@ -262,10 +258,10 @@ These are facts or choices not settled during design. They must be resolved in p
 1. **Java SDK for the model provider.** Not verified whether an official Anthropic Java SDK exists and is suitable; if not, the gateway calls the HTTP API directly. Confirm against current documentation.
 2. **Java version and Spring Boot version.** Pick the current LTS and a supported Spring Boot release at planning time.
 3. **File storage.** Database blob versus local directory for CV files; default to a local directory behind a small storage interface.
-4. **Work-rights rule table.** The precise mapping from job restriction phrases to statuses (for example "permanent resident only", "no sponsorship") needs review with real postings.
-5. **Fit-band thresholds.** Initial weights and thresholds are placeholders to be tuned on real jobs.
-6. **Extraction-quality set.** Which postings, and under what terms, are kept as test data.
-7. **Export and deletion formats.**
+4. **Eligibility rule table.** Review recognizable restriction phrases and comparisons against explicit self-reported permission facts using real postings; do not infer rights from visa labels or turn unsupported phrases into failures.
+5. **Extraction-quality set.** Which postings, and under what terms, are kept as test data.
+6. **Portable export format and deletion details.** Choose formats and minimal CV deletion-marker fields; restore/import is not in scope.
+7. **Preference and language comparisons.** Define conservative comparable values and unknown cases for the initial rule set; do not introduce a fit band.
 
 ## 15. What comes next
 

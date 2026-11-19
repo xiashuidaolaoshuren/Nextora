@@ -52,7 +52,7 @@ Sub-projects 2 and 3 are independent of each other once the core exists and can 
 - Source adapter abstraction with provenance, retrieval time and per-source policy.
 - Cross-source deduplication on normalized company and title.
 - Liveness check before a job is shown as open.
-- Digest and alerts (email first; Telegram or WhatsApp optional) with a score or band threshold for instant alerts, plus thumbs up and down feedback.
+- Digest and alerts (email first; Telegram or WhatsApp optional), plus thumbs up and down feedback. Alert criteria are to be designed in this sub-project; the core provides requirement-level evidence mappings, not a fit score or band.
 
 **Decision gate before building:** a per-source terms review for JobsDB, LinkedIn, Indeed, CTgoodjobs and OfferToday. The outcome sets which sites the extension supports. This is a product review, not legal advice; get professional advice before any commercial launch.
 
@@ -129,7 +129,7 @@ These are not sub-projects but need attention along the way.
 - **Evaluation set:** a small, maintained set of real or representative job descriptions and CVs to track extraction and matching quality as models and prompts change.
 - **Cost control:** log and review model cost per task; consider a cheaper model for extraction.
 - **Security:** API key handling, file upload validation, prompt-injection handling of ingested text.
-- **Backup and restore** and data export, ahead of any hosted use.
+- **Backup and restore** ahead of any hosted use. The core's portable data export is not a tested backup or an import/restore workflow.
 - **Chinese interface:** deferred. Chinese job and CV text is handled from sub-project 1; a translated interface is a later addition if other users need it.
 
 ## Parked ideas
