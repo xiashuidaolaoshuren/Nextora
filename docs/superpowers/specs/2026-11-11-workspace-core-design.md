@@ -84,9 +84,11 @@ One package per module. Modules call each other only through their public servic
 
 A single `CurrentUser` abstraction returns the user for each request. In this spec it returns one fixed default user created at startup. Adding sign-in later replaces that implementation only; modules and queries already filter by `user_id`.
 
+The backend enforces same-candidate ownership for every relationship between user-owned records, not just for the record being read or written. For example, an Application can reference only the current candidate's Job and CV Version. A write with an out-of-scope reference fails as if the referenced record were unavailable, without disclosing ownership or saving any part of the write, including history.
+
 ## 6. Data model
 
-All tables have `id`, `user_id`, `created_at`, `updated_at` unless noted.
+All tables have `id`, `user_id`, `created_at`, `updated_at` unless noted. Choose how to enforce same-candidate relationships in the implementation plan.
 
 **`candidate_profile`** (one per user)
 - `career_stage` (student, graduate, experienced)
@@ -104,7 +106,7 @@ All tables have `id`, `user_id`, `created_at`, `updated_at` unless noted.
 
 **`cv_version`** (file content immutable once saved; metadata editable)
 - `file_name`, `content_type`, `file_blob_ref`, `extracted_text`
-- `label`, `parent_version_id` (nullable), archive state; a permanently deleted version retains only a minimal deletion marker for references
+- `label`, `parent_version_id` (nullable), lifecycle state (active, archived, deletion pending, or deleted); a deleted version retains only a minimal marker for references
 
 **`job`**
 - `raw_text`, `source_url` (nullable), `sanitized_text`
@@ -115,7 +117,7 @@ All tables have `id`, `user_id`, `created_at`, `updated_at` unless noted.
 - `requirements` (list of requirement text, `must_have` or `nice_to_have`)
 - `field_origin` and review state per field; source quote and verification state for extracted conditions
 
-**`match_result`** (snapshot per job and input revision; changes mark it stale, never trigger a provider call)
+**`match_result`** (results per job; Evidence Fit mappings are tied to the revision of the inputs assessed)
 - `eligibility_checks`: list of `{dimension, outcome: pass|fail|unknown, job_quote, profile_value}`
 - `preference_comparisons`: separate informational matches, mismatches or unknowns
 - `requirement_mappings`: list of `{requirement_id, support: direct|transferable|none|unable_to_assess, evidence_ids, note}`
@@ -136,7 +138,7 @@ All tables have `id`, `user_id`, `created_at`, `updated_at` unless noted.
 
 ### 7.1 Profile and eligibility
 
-The user may leave any profile fact unspecified; missing information produces `unknown`, not a negative inference. Work permission is self-reported separately from visa status, with jurisdiction and restrictions where known. No visa label alone proves permission or sponsorship need. Profile edits mark affected match results stale.
+The user may leave any profile fact unspecified; missing information produces `unknown`, not a negative inference. Work permission is self-reported separately from visa status, with jurisdiction and restrictions where known. No visa label alone proves permission or sponsorship need. Profile edits update affected deterministic checks locally.
 
 ### 7.2 Evidence library and CV import
 
@@ -149,7 +151,11 @@ If text extraction yields little or no text (for example a scanned PDF), the upl
 
 ### 7.3 CV versions
 
-Each upload creates a new `cv_version` with immutable file content. The user can edit its label and select a default for new applications; a default is only a suggestion, not proof of submission. Archive is the default removal action. Permanent deletion requires explicit confirmation, removes the file and extracted content, and retains a minimal deleted-version marker so application history remains intelligible; confirmed evidence survives independently. Diffing and generated tailored versions are a later spec.
+Each upload creates a new `cv_version` with immutable file content. The user can edit its label and select a default for new applications; a default is only a suggestion, not proof of submission. Archive is the default removal action. Diffing and generated tailored versions are a later spec.
+
+Permanent deletion requires explicit confirmation. Once the request is accepted, **Deletion pending** survives a restart, and the CV is immediately unavailable for viewing, selection, export, or new provider tasks. Resume interrupted cleanup automatically after restart; retries are safe even if some content has already been removed. Show **Deleted** only after both the original file and extracted text are gone from active app-managed storage. Retain a minimal marker for application history and preserve independently confirmed evidence.
+
+If an in-flight evidence-suggestion request returns after deletion has started, discard the reply: it must not create Suggested Evidence or restore CV content. Local deletion cannot recall text already sent to the provider.
 
 ### 7.4 Job intake
 
@@ -171,11 +177,17 @@ Matching presents separate advisory eligibility checks, preference comparisons a
 
 **Fit mapping (model-assisted, code-verified).** On explicit request, send job requirements and confirmed candidate evidence to the gateway. For each requirement return `direct`, `transferable` or `none`, cited evidence IDs and a short note. Verify each cited ID exists, belongs to the user and is confirmed. Invalid citations make that mapping `unable_to_assess`, not `none`; log the error without sensitive text. Missing requirements, missing evidence, invalid responses or provider failure must be presented as unable to assess where applicable, not as an unsupported requirement. These mappings assess the candidate, not whether any particular submitted CV contains the evidence. Show mappings without a band or percentage.
 
-Profile, confirmed evidence and job changes mark affected results stale. Display stale results as such; refresh deterministic checks locally on user request, and refresh model-assisted mappings only on a separate explicit user-initiated provider action. No automatic provider call occurs on changes.
+When their inputs change, recalculate eligibility and preference comparisons locally without requiring a separate action. Mark previously published Evidence Fit mappings stale when their inputs change; they must not appear as current support. Only an explicit user action refreshes Evidence Fit. Input changes never initiate a provider call.
+
+Tie each Evidence Fit request to the revision of the inputs it assesses. When publishing a response, verify that revision is still current so an edit cannot race with publication. If the inputs changed while the request was in flight, discard the mapping, retain only call metadata, and leave any newer result untouched. Tell the candidate they can request a fresh assessment; never rerun it automatically.
 
 ### 7.6 Application tracker
 
-A job may exist without an application and may have multiple applications, one per actual attempt. The user can move directly to any appropriate status, skipping intermediate statuses; each actual change appends one event with the true previous and new statuses and time, without inventing skipped history. Record the submitted CV version when known and pin that version to the attempt; otherwise leave it unknown. Later default changes do not alter the pinned version. Show current corrected job fields alongside application-specific data, not a frozen copy. The list can filter by status and sort by deadline; overdue and upcoming deadlines are highlighted. No notifications are included.
+A job may exist without an application and may have multiple applications, one per actual attempt. The user can move directly to any appropriate status without inventing skipped history. Save each status change and its history event together or save neither. Each event records the actual previous and new statuses and the time of the change. Corrections append a visible event without rewriting prior history.
+
+Recognize a retry of an already successful status action before checking for a stale view. Acknowledge the original action and return the current status without applying the action again or appending another event, even if a later change has occurred. A genuinely new status action based on an outdated status view makes no change: show the current status and let the candidate review it before resubmitting deliberately.
+
+Record the submitted CV version when known and pin that version to the attempt; otherwise leave it unknown. Later default changes do not alter the pinned version. Show current corrected job fields alongside application-specific data, not a frozen copy. The list can filter by status and sort by deadline; overdue and upcoming deadlines are highlighted. No notifications are included.
 
 ### 7.7 LLM gateway
 
@@ -198,7 +210,7 @@ React, TypeScript, Tailwind, shadcn/ui, with a client generated from the OpenAPI
 
 1. Profile
 2. Evidence library (list, confirm or reject suggestions, add)
-3. CV versions (upload, label, default, archive, confirm permanent deletion)
+3. CV versions (upload, label, default, archive, confirm permanent deletion, distinguish pending from deleted)
 4. Jobs (paste or manual entry, optional explicit extraction, review fields beside raw text)
 5. Job detail with advisory eligibility, separate preference comparisons and candidate evidence mappings, including stale and unable-to-assess states
 6. Applications (list, detail, status history)
@@ -215,7 +227,11 @@ Wireframes are not part of this spec; they can be produced during planning if ne
 | No API key | "No model" mode |
 | CV has no extractable text | Keep file, skip suggestions, prompt for manual evidence |
 | Duplicate job paste (same normalized text) | Warn and offer the existing job, but allow another |
-| Match inputs changed | Mark result stale; refresh only on user request |
+| Match inputs changed | Recalculate affected deterministic checks locally; mark prior Evidence Fit mappings stale and discard obsolete in-flight mappings. Refresh Evidence Fit only on explicit request |
+| Write references another candidate's record | Return the same response as for an unavailable reference and save nothing |
+| Status action retried after success | Acknowledge the original action and return current status without appending an event |
+| New status action based on a stale view | Make no change and show current status for review |
+| Permanent CV deletion interrupted | Keep content inaccessible while deletion is pending and resume cleanup after restart |
 | Unverified quote or unrecognized extracted condition | Eligibility is `unknown`, never fail on that condition |
 
 ## 11. Privacy and data handling
@@ -235,7 +251,10 @@ Follows the project's test-first rule for new behavior.
 
 - **Test-first, deterministic code:** eligibility rule table, exact quote verification and recognition, missing profile facts, separation of permission and visa status and of preferences and eligibility, evidence ownership and confirmation, sanitization, skipped-status history, current-user scoping and stale detection.
 - **Privacy and lifecycle:** assert upload, paste and input edits make no provider calls; each explicit provider action sends only its needed inputs. Test duplicate warnings without blocking, independent jobs and multiple attempts, submitted CV pinning, archive and deletion markers, evidence survival, corrected job fields, and portable export without a restore promise.
-- **Fit failures:** invalid, foreign or unconfirmed citations yield `unable_to_assess`, not `none`; empty inputs and provider errors do not fabricate a fit result. Verify refresh is user-initiated.
+- **Fit failures and freshness:** invalid, foreign or unconfirmed citations yield `unable_to_assess`, not `none`; empty inputs and provider errors do not fabricate a fit result. Withdraw an Evidence Item while a request is in flight and verify the obsolete response is discarded without replacing a newer result or triggering a rerun. Verify that changing a job condition updates the local check without a provider call.
+- **Ownership:** test with two candidates even though the UI exposes only one. An Application referencing the other candidate's CV fails like a missing reference and leaves neither an Application nor a history event.
+- **Application history:** simulate a lost response after marking Applied, a subsequent move to Interviewing, then a retry of the first action. Verify the retry reports Interviewing without adding an event. Verify a new action from the old view makes no change, and a persistence failure cannot save a status change without its event or vice versa.
+- **Deletion recovery:** interrupt cleanup after deletion is accepted. Verify that restart resumes cleanup, that pending content is inaccessible and omitted from export, and that completion waits for both the file and extracted text to be removed. A late provider reply creates no Suggested Evidence; the history marker and independently confirmed evidence survive.
 - **Integration:** Testcontainers with real PostgreSQL for persistence and migrations.
 - **Model-dependent modules:** unit tests against recorded provider responses and fakes; no live model calls in the normal test run.
 - **Extraction quality set:** a small collection of real Hong Kong job descriptions (English, Traditional Chinese, mixed) with expected fields, run on demand against the real model to track quality. Source and storage of this set must respect the original postings' terms; use postings the author has permission to keep or write representative ones.
@@ -246,10 +265,11 @@ Follows the project's test-first rule for new behavior.
 1. The author can run a real application loop, explicitly requesting any provider assistance: upload a CV, confirm candidate evidence, create a job, review advisory eligibility and preference results and candidate fit mappings, and track an attempt.
 2. Eligibility is deterministic and conservative: missing information and unverified or unrecognized extracted conditions are unknown; preferences never fail eligibility. Invalid evidence citations are unable to assess, never `none`.
 3. Without a model, manual structured jobs, deterministic checks, evidence entry and application tracking work. Uploads and pastes make no provider calls.
-4. Jobs can exist independently and have multiple attempts; skipped statuses have truthful history, and the submitted CV is pinned when known. CV deletion preserves a marker and confirmed evidence.
-5. Changes mark results stale without automatic provider calls; current corrected job fields appear in application views. Portable export is available without a restore claim.
-6. A fresh checkout starts with a single Docker Compose command and a documented environment file.
-7. Adding a second user requires replacing the `CurrentUser` implementation, with no query changes.
+4. Jobs can exist independently and have multiple attempts; skipped statuses and corrections have truthful history, and the submitted CV is pinned when known. Status and history commit together; retries do not duplicate events or undo later transitions, and new actions from stale views require review.
+5. Deterministic checks update locally. Changes stale affected Evidence Fit mappings without automatic provider calls, and obsolete in-flight mappings never become current. Application views show current corrected job fields.
+6. Interrupted CV deletion resumes after restart without exposing pending content or accepting late suggestions. Completed deletion preserves only the CV history marker and leaves independently confirmed evidence intact. Portable export is available without a restore claim.
+7. A fresh checkout starts with a single Docker Compose command and a documented environment file.
+8. Adding a second user requires replacing the `CurrentUser` implementation, with no query changes. Tests with two candidates verify that a cross-candidate reference cannot create or modify a record or its history.
 
 ## 14. Unresolved items
 
