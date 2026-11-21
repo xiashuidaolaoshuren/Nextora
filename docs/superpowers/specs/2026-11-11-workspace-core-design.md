@@ -215,7 +215,7 @@ React, TypeScript, Tailwind, shadcn/ui, with a client generated from the OpenAPI
 5. Job detail with advisory eligibility, separate preference comparisons and candidate evidence mappings, including stale and unable-to-assess states
 6. Applications (list, detail, status history)
 
-Layout, visual tone, state wording and a per-screen state matrix are in the [UI brief](../../design/ui-brief.md). This spec defines behavior; if the two disagree, this spec wins.
+Layout, visual tone, state wording and a per-screen state matrix are in the [UI brief](../../design/ui-brief.md), and a clickable [design prototype](../../design/prototype/workspace-core.html) shows them. The prototype is a design reference, not code to reuse. This spec defines behavior; if the two disagree, this spec wins.
 
 ## 10. Error handling
 

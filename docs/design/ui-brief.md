@@ -3,6 +3,7 @@
 **Status:** Living document. Created 2026-11-20 for the workspace core; later sub-projects add their own sections.
 **Audience:** The author, and design tools (for example OpenDesign) that produce a prototype from it.
 **Reference:** [LuJie CareerKit UI digest](../research/lujie-careerkit-ui-digest.md) for layout ideas.
+**Prototype:** [workspace-core.html](prototype/workspace-core.html), a clickable first pass of Part 2 (Workspace core). See [Prototype status](#prototype-status) for how it differs from this brief.
 
 ## How to use this brief
 
@@ -158,3 +159,25 @@ For realistic prototype content (Hong Kong, written by the author or representat
 ### 2.9 Out of scope for this section
 
 Export and delete-all screens, real eligibility rules, real file parsing, mobile polish beyond readability, a dark theme.
+
+---
+
+# Prototype status
+
+**File:** [prototype/workspace-core.html](prototype/workspace-core.html). A single self-contained HTML file (HTML, CSS and plain JavaScript, system fonts, no network). Open it directly in a browser.
+
+**How it was made:** generated on 2026-11-20 by OpenDesign (local Claude Code agent) from Part 1 and Part 2 of this brief, with the product-shell scope and polished fidelity. It is a design reference, not production code: the real frontend is React, TypeScript, Tailwind and shadcn/ui, built later from the approved design (see the core spec, section 9). Nothing in the prototype is saved between reloads.
+
+**Verification so far:** the script passes a JavaScript syntax check, and a text search found code for every state in the matrix (2.7). It has **not** been opened and clicked through in a browser, so rendering, layout and runtime behavior are unchecked.
+
+**Prototype states panel:** a dashed pill at the bottom-left switches model ready or no model, first run or sample data, whether the next simulated model call succeeds or fails, and the per-screen variants that cannot be reached by clicking. It exists only in the prototype. The bottom-right corner stays empty.
+
+**Known differences from this brief (to fix in the prototype or decide here):**
+
+1. **Stale fit rows** stay visible, dimmed and striped under the stale banner. The spec says a stale mapping must not appear as current support. Hide the support labels while stale, or mark each row "Previous result".
+2. **Overdue deadlines** use the stale (amber) colour. State colours are reserved for their own meaning (section 1.2), so overdue needs its own token or a neutral treatment.
+3. **Sample content:** the prototype uses fictional names ("Harbourline Bank") instead of real employers, and the duplicate warning reads accordingly.
+4. **Sponsorship conflict:** the sample candidate is set to need sponsorship, which is what makes the "without sponsorship" quote show as a conflict. Check the wording when reviewing.
+5. **Colours and text:** state text uses slightly darker shades than the section 1.2 values, for readability on tinted backgrounds. Update section 1.2 if you keep them.
+
+**Not yet reviewed:** empty and error states beyond the matrix, keyboard use and contrast, and how it looks at narrow widths.
