@@ -4,7 +4,7 @@
 **Planning horizon:** about 6 months, solo
 **Status:** Planning hypothesis, not a commitment. Revise after each sub-project.
 
-Background: [competitive research](../AI_Career_Copilot_Competitive_Research.md) (Sections 5.4, 6, 7A). The research document's original 12-month phasing is superseded by this roadmap.
+Background: [competitive research](research/AI_Career_Copilot_Competitive_Research.md) (Sections 5.4, 6, 7A). The research document's original 12-month phasing is superseded by this roadmap.
 
 Each sub-project gets its own spec, then plan, then implementation. Week ranges are rough estimates and assume part of the time goes to review, testing and rework.
 

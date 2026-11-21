@@ -3,7 +3,7 @@
 **Date:** 2026-11-11
 **Status:** Draft for review
 **Sub-project:** 1 of 5 (workspace core). Later sub-projects each get their own spec: materials, capture and discovery, autofill, interview.
-**Background:** [AI_Career_Copilot_Competitive_Research.md](../../../AI_Career_Copilot_Competitive_Research.md), especially Sections 4, 5.4, 7 and 7A.
+**Background:** [AI_Career_Copilot_Competitive_Research.md](../../research/AI_Career_Copilot_Competitive_Research.md), especially Sections 4, 5.4, 7 and 7A.
 
 ## 1. Goal
 
@@ -215,7 +215,7 @@ React, TypeScript, Tailwind, shadcn/ui, with a client generated from the OpenAPI
 5. Job detail with advisory eligibility, separate preference comparisons and candidate evidence mappings, including stale and unable-to-assess states
 6. Applications (list, detail, status history)
 
-Wireframes are not part of this spec; they can be produced during planning if needed.
+Layout, visual tone, state wording and a per-screen state matrix are in the [UI brief](../../design/ui-brief.md). This spec defines behavior; if the two disagree, this spec wins.
 
 ## 10. Error handling
 
