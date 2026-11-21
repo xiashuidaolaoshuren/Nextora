@@ -39,7 +39,7 @@ Next: an implementation plan for the workspace core (`/writing-plans` on the spe
 
 These come from the spec and ADRs. If a change seems to need breaking one, stop and ask.
 
-1. **Eligibility is advisory and separate from preferences.** Unknown is never guessed; missing facts or unrecognized conditions are `unknown`. Never derive work permission from visa status. (ADR-0003)
+1. **Eligibility is advisory and separate from preferences.** Unknown is never guessed; missing facts or unrecognized conditions are `unknown`. Never infer Work Permission or Sponsorship to Start from residency or visa status. (ADR-0003)
 2. **No fit score, band or percentage.** Fit is a requirement-by-requirement mapping to confirmed evidence. Invalid citations are "unable to assess", never "none". (ADR-0004)
 3. **Only confirmed evidence is used in matching.** Evidence belongs to the candidate, not to a CV. (ADR-0002)
 4. **Provider calls need an explicit user action.** Uploads, pastes and edits never call a model. Each action says what is sent and to whom. (ADR-0005)

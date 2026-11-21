@@ -56,8 +56,8 @@ These words and icons mean the same thing on every screen. Spec: core §5, §7.5
 | State | Colour | Icon | Wording rule |
 |---|---|---|---|
 | Pass | `state-pass` | check | "Meets" plus the basis. Always labelled advisory. |
-| Conflict | `state-conflict` | cross | Shown only with a job quote and the profile value that contradicts it. Never for a preference. |
-| Unknown | `state-unknown` | question mark | Calm. Says why ("no language level in your profile") and offers the fix link. Never red, never described as a failure. |
+| Conflict | `state-conflict` | cross | Shows the Job condition (with the source quote where available) and the profile value that contradicts it. Never for a preference. |
+| Unknown | `state-unknown` | question mark | Says why ("no language level in your profile") and offers a fix link when the Candidate can resolve it. Never red, never described as a failure. |
 | Stale | `state-stale` | circular arrow | Says what changed ("your evidence changed") and offers an explicit refresh. A stale result is never displayed as current. |
 | Pending | `state-pending` | spinner or hourglass | Says what is in progress and that it survives a restart where the spec says so. |
 | Unable to assess | `state-unknown` | dashed circle | Visibly different from "None". Says why (invalid citation, provider failed) and offers a retry. |
@@ -98,8 +98,8 @@ Spec: [workspace core design](../superpowers/specs/2026-11-11-workspace-core-des
 - **Original pane:** clicking a quote elsewhere highlights it here. Text that looks like instructions to a model is marked "excluded from model input".
 - **Fields tab:** each field shows value, origin badge and quote link, edited in place. The **Extract fields with Claude** button has its disclosure line. If extraction fails, a banner says the job is still usable by manual entry.
 - **Match tab:** three visually separate sections.
-  - *Eligibility (advisory):* a checklist of pass, conflict and unknown, each with the job quote, the profile value, and a fix link for unknown.
-  - *Preferences:* lighter informational chips (location, work mode, salary, employment type, level). Never styled as pass or fail.
+  - *Eligibility (advisory):* a checklist of Pass, Conflict and Unknown. Show the job quote and profile value where available, explain the result, and link to the relevant field if the Candidate can resolve an Unknown. For a relative graduation window, show the date used and its source, for example: “Assessed as of 20 Nov 2026 (the ad gives no reference date).” An expected date that does not yet meet a completed-graduation requirement stays Unknown, with a note such as “Expected graduation: June 2027. You may meet this condition after graduating.”
+  - *Preferences:* lighter informational chips (location, work mode, salary, employment type, level). Compare level against the Candidate’s stated desired level, not their graduation or work history. Never styled as pass or fail.
   - *Evidence fit:* grouped rows, **Must have** then **Nice to have**. Each row has a support label, cited evidence as clickable chips, and a short note. A stale banner covers the whole section, with a **Refresh** button and its disclosure line.
 - **Applications tab:** the attempts for this job, and **+ New attempt**. Applications can also exist without any job-page visit, from the Applications screen.
 
@@ -126,9 +126,11 @@ Spec: [workspace core design](../superpowers/specs/2026-11-11-workspace-core-des
 
 ### 2.6 Profile
 
-- Work permission (jurisdiction, restrictions, sponsorship need) in one box. Visa status in a separate box that says it does not determine permission.
-- Languages and levels, career stage, preferences (districts, work modes, salary floor, target roles).
-- Every fact can be set to **Not specified**, which is a normal choice and is explained as producing "unknown", not a negative.
+- **Right to work in Hong Kong:** one card, with no jurisdiction picker or separate visa card. Offer the shortcut **Confirm all three** next to the statement: “I’m a Hong Kong permanent resident, I can work in Hong Kong now without restrictions, and a new employer doesn’t need to apply for a work visa or approval for me to start.” Show the three saved answers after confirmation, with an option to edit them individually.
+- **Answer separately:** “Are you a Hong Kong permanent resident?”, “Can you work in Hong Kong now?” (including **Yes, with restrictions**), and “Would a new employer need to apply for a work visa or approval before you can start?” Use **Not sure** for the work-rights questions. Keep optional visa status, expiry and restriction notes under **For your reference**, with the line “These notes aren’t used in checks.”
+- **Education and experience:** repeatable degree entries with a degree level and a **Completed** or **Expected** graduation date, and an optional total of full-time work experience in years and months. Allow month and year without an exact graduation day. No **Career Stage** control or label.
+- **Languages** and levels; **Preferences** for districts, work modes, salary floor, target roles, and desired level.
+- An unanswered fact or an explicit **Not specified** or **Not sure** is a normal choice and means Unknown for affected checks, not No.
 
 ### 2.7 State matrix
 
@@ -139,12 +141,12 @@ Each state below must be visible in the prototype, either reachable or shown as 
 | App shell | Model ready; no model |
 | Jobs | First run (empty, checklist); populated; needs-attention empty and non-empty; duplicate-paste warning; needs-review job |
 | Job: Fields | Extracted; user-edited; manual; needs review; extraction running; extraction failed |
-| Job: Match, eligibility | Pass; conflict; unknown (missing profile fact); unknown (unrecognized condition); unknown (unverified quote) |
+| Job: Match, eligibility | Pass; conflict; unknown (missing profile fact, unrecognized condition, unverified quote, restricted permission, future sponsorship, or expected graduation); relative graduation window with its reference date |
 | Job: Match, fit | Not run; current; stale; refresh running; unable to assess (invalid citation); unable to assess (provider failed); none; direct; transferable |
 | Applications | Empty; populated; overdue and upcoming deadlines; pinned CV; unknown CV; skipped-status history; correction event; stale-view notice; retry acknowledgement |
 | Evidence | To-review list; empty; confirmed; rejected; edit and confirm |
 | CVs | Active; archived; default; deletion pending; deleted marker; no extractable text; suggestion running; suggestion discarded after deletion |
-| Profile | Empty; partly filled; fully filled; not specified |
+| Profile | Empty; partly filled; fully filled; not specified; permanent-resident shortcut confirmed; work rights answered separately, including restricted permission |
 
 ### 2.8 Seed scenarios
 
@@ -155,6 +157,7 @@ For realistic prototype content (Hong Kong, written by the author or representat
 - Evidence in every state, including a suggestion from a CV and a manual item.
 - Applications covering saved, applied, interviewing and rejected, with one that skipped a status and one correction event.
 - One job with stale Evidence Fit; one with an unable-to-assess row; one with a conflict, with a quote.
+- Include a graduate-trainee ad with an explicit graduation window or a mandatory full-time experience cap. Show the permanent-resident shortcut in the main sample profile and restricted permission in a separate variant. Do not treat a possible future extension as proof that sponsorship is needed to start.
 
 ### 2.9 Out of scope for this section
 
@@ -168,7 +171,7 @@ Export and delete-all screens, real eligibility rules, real file parsing, mobile
 
 **How it was made:** generated on 2026-11-20 by OpenDesign (local Claude Code agent) from Part 1 and Part 2 of this brief, with the product-shell scope and polished fidelity. It is a design reference, not production code: the real frontend is React, TypeScript, Tailwind and shadcn/ui, built later from the approved design (see the core spec, section 9). Nothing in the prototype is saved between reloads.
 
-**Verification so far:** the script passes a JavaScript syntax check, and a text search found code for every state in the matrix (2.7). It has **not** been opened and clicked through in a browser, so rendering, layout and runtime behavior are unchecked.
+**Verification so far:** the first pass passed a JavaScript syntax check, and a text search found code for the original state matrix. That check did not cover the revised Profile and Eligibility states in section 2.7.
 
 **Prototype states panel:** a dashed pill at the bottom-left switches model ready or no model, first run or sample data, whether the next simulated model call succeeds or fails, and the per-screen variants that cannot be reached by clicking. It exists only in the prototype. The bottom-right corner stays empty.
 
@@ -177,7 +180,7 @@ Export and delete-all screens, real eligibility rules, real file parsing, mobile
 1. **Stale fit rows** stay visible, dimmed and striped under the stale banner. The spec says a stale mapping must not appear as current support. Hide the support labels while stale, or mark each row "Previous result".
 2. **Overdue deadlines** use the stale (amber) colour. State colours are reserved for their own meaning (section 1.2), so overdue needs its own token or a neutral treatment.
 3. **Sample content:** the prototype uses fictional names ("Harbourline Bank") instead of real employers, and the duplicate warning reads accordingly.
-4. **Sponsorship conflict:** the sample candidate is set to need sponsorship, which is what makes the "without sponsorship" quote show as a conflict. Check the wording when reviewing.
+4. **Profile and Eligibility:** the first pass still has a Career Stage control and treats job level as a stage-based conflict. It also separates visa status into its own card and uses a potential IANG extension to illustrate a sponsorship conflict. Replace these with the confirmed profile facts and Eligibility examples in sections 2.2, 2.6 and 2.8.
 5. **Colours and text:** state text uses slightly darker shades than the section 1.2 values, for readability on tinted backgrounds. Update section 1.2 if you keep them.
 
 **Not yet reviewed:** empty and error states beyond the matrix, keyboard use and contrast, and how it looks at narrow widths.

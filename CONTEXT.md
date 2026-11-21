@@ -33,12 +33,23 @@ _Avoid_: Saved Job, opening
 ### Candidate records
 
 **Candidate Profile**:
-The Candidate's self-reported facts and job preferences, including work permission and language abilities where known.
+The Candidate's self-reported facts and job preferences, including Work Permission, Graduation Dates, Full-time Work Experience, and language abilities where known.
 _Avoid_: CV, Evidence Library
 
 **Work Permission**:
-A Candidate's self-reported permission to work in a jurisdiction, including known restrictions or sponsorship needs. It is distinct from visa status and is not a legal determination.
+A Candidate's self-reported current permission to work in a jurisdiction, including whether it is restricted. It is distinct from residency, visa status, and whether a new employer needs to apply for approval.
 _Avoid_: Visa status as a synonym for permission
+
+**Sponsorship to Start**:
+Whether a new employer would need to apply for a work visa or approval before the Candidate could start work. It says nothing about employer support for a future extension.
+_Avoid_: Unqualified sponsorship need
+
+**Graduation Date**:
+The Candidate's self-reported date of graduation for a particular degree, marked as completed or expected.
+_Avoid_: Career stage
+
+**Full-time Work Experience**:
+The Candidate's self-reported total duration of full-time work, across roles. It is distinct from experience in a particular role, field, or skill.
 
 **Evidence Item**:
 A Candidate claim about experience, education, skills, projects, or credentials. Evidence belongs to the Candidate rather than to a particular CV, although a CV may be its source.

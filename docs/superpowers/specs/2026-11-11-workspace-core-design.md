@@ -22,7 +22,8 @@ The first user is the author. The product is designed so that other users can be
 | Backend | Java (current LTS) with Spring Boot, TypeScript on the frontend |
 | Database | PostgreSQL, with Flyway migrations |
 | AI provider | Provider-agnostic gateway, Claude as default |
-| Work permission | Self-reported permission, separate from visa status; neither is a legal determination |
+| Work Permission | Hong Kong first; self-reported separately from permanent residency and visa status |
+| Graduate-program checks | Explicit graduation windows and mandatory caps on total full-time work experience; no Career Stage label |
 | Interface language | English only in this spec |
 | Job text language | English and Chinese job descriptions and CVs are handled |
 
@@ -30,7 +31,7 @@ The first user is the author. The product is designed so that other users can be
 
 **In scope**
 
-1. Profile and eligibility preferences
+1. Candidate Profile: self-reported facts and job preferences
 2. Evidence library
 3. CV storage and versions
 4. Job intake from pasted text
@@ -71,7 +72,7 @@ One package per module. Modules call each other only through their public servic
 
 | Module | Responsibility | Depends on |
 |---|---|---|
-| `profile` | Candidate profile, eligibility preferences | none |
+| `profile` | Candidate Profile facts and preferences | none |
 | `evidence` | Evidence items and their confirmation state | `llm` (for CV import suggestions) |
 | `cv` | CV file storage, text extraction, versions | `evidence` |
 | `job` | Pasted job text, sanitization, extracted structure | `llm` |
@@ -91,12 +92,13 @@ The backend enforces same-candidate ownership for every relationship between use
 All tables have `id`, `user_id`, `created_at`, `updated_at` unless noted. Choose how to enforce same-candidate relationships in the implementation plan.
 
 **`candidate_profile`** (one per user)
-- `career_stage` (student, graduate, experienced)
-- Self-reported `work_permission` facts, including jurisdiction and any known restrictions or sponsorship need; unknown facts remain unspecified
-- `visa_status` (nullable, self-reported and separate from permission; never infer permission solely from it)
+- Hong Kong work facts, each independently optional: `hong_kong_permanent_resident` (yes or no), `work_permission` (yes, yes with restrictions, or no), and `sponsorship_to_start` (yes or no). The jurisdiction is fixed to Hong Kong in v1.
+- Optional personal notes: `visa_status`, `permission_valid_until`, and free-text restrictions. None is used in Eligibility checks.
+- `graduation_dates` (list of degree entries, each with a degree level, completed or expected status, and a date; month and year are enough, with a day if known).
+- `full_time_experience_months` (nullable, self-reported total across roles; zero is distinct from unknown).
 - `languages` (list of language plus level, for Cantonese, English, Mandarin, and others)
 - `preferred_districts` (list), `work_modes` (onsite, hybrid, remote)
-- `salary_floor_hkd` (nullable), `target_roles` (list)
+- `salary_floor_hkd` (nullable), `target_roles` (list), `desired_level` (nullable, stated as a preference)
 
 **`evidence_item`**
 - `kind` (experience, project, education, skill, certification)
@@ -113,12 +115,14 @@ All tables have `id`, `user_id`, `created_at`, `updated_at` unless noted. Choose
 - `status` (`manual`, `extracted`, `needs_review`)
 - Extracted fields, each nullable and user-correctable: `title`, `hiring_company`, `poster_name`, `poster_type` (employer, recruiter, unknown), `district`, `work_mode`, `salary_min_hkd`, `salary_max_hkd`, `deadline`, `employment_type`, `experience_level`
 - `language_requirements` (list of language, level, and the quoted sentence)
-- `work_rights_restrictions` (list of restriction type and the quoted sentence)
+- `work_rights_restrictions` (list of conditions such as Hong Kong Work Permission, permanent residency, or no sponsorship, with sponsorship timing when stated)
+- `graduation_conditions` (list of mandatory graduation windows or cohorts, with degree level, whether expected graduation is accepted, and the reference date or event when stated)
+- `experience_caps` (list of mandatory maximums on total full-time work experience, with any scope needed to establish comparability)
 - `requirements` (list of requirement text, `must_have` or `nice_to_have`)
 - `field_origin` and review state per field; source quote and verification state for extracted conditions
 
 **`match_result`** (results per job; Evidence Fit mappings are tied to the revision of the inputs assessed)
-- `eligibility_checks`: list of `{dimension, outcome: pass|fail|unknown, job_quote, profile_value}`
+- `eligibility_checks`: list of `{dimension, outcome: pass|fail|unknown, job_quote, profile_value, basis}`. For relative graduation windows, include the reference date and whether it comes from the Job or the assessment.
 - `preference_comparisons`: separate informational matches, mismatches or unknowns
 - `requirement_mappings`: list of `{requirement_id, support: direct|transferable|none|unable_to_assess, evidence_ids, note}`
 - `computed_at`, `inputs_hash`, nullable `model_call_id`; no aggregate fit band
@@ -138,7 +142,11 @@ All tables have `id`, `user_id`, `created_at`, `updated_at` unless noted. Choose
 
 ### 7.1 Profile and eligibility
 
-The user may leave any profile fact unspecified; missing information produces `unknown`, not a negative inference. Work permission is self-reported separately from visa status, with jurisdiction and restrictions where known. No visa label alone proves permission or sponsorship need. Profile edits update affected deterministic checks locally.
+The Candidate may leave any profile fact unspecified. An unanswered fact or a **Not sure** answer leaves the fact unknown, not negative. Profile edits update affected deterministic checks locally.
+
+For Hong Kong, ask three separate questions: whether the Candidate is a Hong Kong permanent resident, whether they can work in Hong Kong now (including **Yes, with restrictions**), and whether a new employer would need to apply for a work visa or approval before they can start. A single shortcut records **permanent resident: yes**, **work permission: yes without restrictions**, and **sponsorship to start: no** only after the Candidate explicitly confirms a statement that spells out all three. Answering the residency question by itself does not set either of the other answers. Never infer permission or sponsorship from residency or visa status. Visa status, expiry, and free-text restrictions are personal notes, not inputs to checks.
+
+Record Graduation Dates per degree, distinguishing completed from expected, and total Full-time Work Experience separately. Do not derive a Student / Graduate / Experienced label, infer these facts from a CV, or mark an expected degree as completed just because its date has passed. The level a Candidate is seeking is a separate preference.
 
 ### 7.2 Evidence library and CV import
 
@@ -171,13 +179,19 @@ The extractor separates the poster (employer or recruiter) from the hiring compa
 
 Matching presents separate advisory eligibility checks, preference comparisons and candidate fit mappings. None blocks tracking or determines legal eligibility.
 
-**Eligibility checks (deterministic).** Compare explicit job conditions with relevant self-reported facts, including work permission and required language ability, using a small versioned rule table. Missing job conditions, missing profile facts, incomparable language levels and ambiguous or unrecognized conditions yield `unknown`; an omitted language is not proof of inability. Never derive permission from visa status. A fail requires a recognized condition and enough explicitly supplied facts to establish a contradiction. An unreviewed model-extracted condition may fail only when its source quote is verbatim in the original and deterministic recognition of that quote establishes the condition; otherwise it is `unknown`. User-reviewed or manually entered conditions must also be deterministically interpretable. Display the basis and source where available, and clearly label results advisory.
+**Eligibility checks (deterministic).** Compare explicit mandatory Job conditions with relevant self-reported facts using a small versioned rule table. Missing Job conditions, missing Candidate facts, and ambiguous or unsupported conditions yield `unknown`. A fail requires a recognized condition and enough explicitly supplied facts to establish a contradiction. An unreviewed model-extracted condition may fail only when its source quote is verbatim in the original and deterministic recognition of that quote establishes the condition; otherwise it is `unknown`. User-reviewed or manually entered conditions must also be deterministically interpretable. Display the basis and source where available, and clearly label results advisory.
 
-**Preference comparisons.** Location, work mode, salary, employment type and desired level are informational comparisons against explicit preferences, not eligibility checks. Missing or incomparable values are unknown; career stage alone does not imply a preference or exclusion.
+- **Hong Kong work rights.** Compare each recognized condition with the relevant fact: permanent residency, current Work Permission, or Sponsorship to Start. An answer of **Yes, with restrictions** yields `unknown` when the effect of the restriction on the Job cannot be established; do not interpret notes. A requirement that also rules out future sponsorship cannot pass on a no-sponsorship-to-start answer alone. Future sponsorship is not assessed in v1. For example, a Candidate who can start without employer help but might need help extending their permission is not automatically a conflict or a pass for “no sponsorship now or in the future.” A reference to an HKID card alone does not establish a permanent-residency condition.
+- **Language.** An omitted language or an incomparable level yields `unknown`, not a contradiction.
+- **Graduation.** Check explicit mandatory cohorts and windows. Use the most recent completed degree unless the Job specifies a degree level, in which case use the most recent completed degree at that level. If the Job explicitly accepts expected graduation, an expected date within the stated scope can satisfy the condition. If the Job requires completed graduation and only an expected date is available for the relevant degree, show `unknown` and explain what could change after graduation; never count it as a provisional pass. “Fresh graduates welcome” is an invitation, not a condition; “recent graduates” without a recognizable window cannot establish a conflict or a pass.
+- **Graduation reference dates.** For a relative window, use the reference date the Job explicitly specifies, or the date of a stated reference event if known. If the Job gives no reference point, use the assessment date in Hong Kong and label it as the fallback. If the Job specifies a reference point but its date is unknown, the check is `unknown`. Display the date and basis used. If the Candidate supplies only the month and year and possible dates within that month give different outcomes, show `unknown` rather than inventing a day.
+- **Experience caps.** Check explicit mandatory caps on total full-time work experience only when the Candidate's total is comparable to the Job's definition. For example, “no more than two years of full-time work experience” includes exactly two years. If the ad uses a different scope that the profile cannot establish, such as counting only work after graduation, show `unknown`. Ordinary level descriptions and general minimums are informational in v1. Role-specific experience belongs in Evidence Fit, not in a comparison against total years.
+
+**Preference comparisons.** Location, work mode, salary, employment type and desired level are informational comparisons against explicit preferences, not eligibility checks. Missing or incomparable values are unknown. Neither a Graduation Date nor total Full-time Work Experience sets the Candidate's desired level.
 
 **Fit mapping (model-assisted, code-verified).** On explicit request, send job requirements and confirmed candidate evidence to the gateway. For each requirement return `direct`, `transferable` or `none`, cited evidence IDs and a short note. Verify each cited ID exists, belongs to the user and is confirmed. Invalid citations make that mapping `unable_to_assess`, not `none`; log the error without sensitive text. Missing requirements, missing evidence, invalid responses or provider failure must be presented as unable to assess where applicable, not as an unsupported requirement. These mappings assess the candidate, not whether any particular submitted CV contains the evidence. Show mappings without a band or percentage.
 
-When their inputs change, recalculate eligibility and preference comparisons locally without requiring a separate action. Mark previously published Evidence Fit mappings stale when their inputs change; they must not appear as current support. Only an explicit user action refreshes Evidence Fit. Input changes never initiate a provider call.
+When their inputs change, recalculate Eligibility and preference comparisons locally without requiring a separate action. Treat a new assessment date as an input change for relative graduation windows that use it; do not show a cached result from the previous day as current. Mark previously published Evidence Fit mappings stale when their inputs change; they must not appear as current support. Only an explicit user action refreshes Evidence Fit. Input changes never initiate a provider call.
 
 Tie each Evidence Fit request to the revision of the inputs it assesses. When publishing a response, verify that revision is still current so an edit cannot race with publication. If the inputs changed while the request was in flight, discard the mapping, retain only call metadata, and leave any newer result untouched. Tell the candidate they can request a fresh assessment; never rerun it automatically.
 
@@ -215,7 +229,7 @@ React, TypeScript, Tailwind, shadcn/ui, with a client generated from the OpenAPI
 5. Job detail with advisory eligibility, separate preference comparisons and candidate evidence mappings, including stale and unable-to-assess states
 6. Applications (list, detail, status history)
 
-Layout, visual tone, state wording and a per-screen state matrix are in the [UI brief](../../design/ui-brief.md), and a clickable [design prototype](../../design/prototype/workspace-core.html) shows them. The prototype is a design reference, not code to reuse. This spec defines behavior; if the two disagree, this spec wins.
+Layout, visual tone, state wording and a per-screen state matrix are in the [UI brief](../../design/ui-brief.md). The clickable [design prototype](../../design/prototype/workspace-core.html) is a first pass and does not yet reflect the revised Profile and Eligibility behavior; see [Prototype status](../../design/ui-brief.md#prototype-status). It is a design reference, not code to reuse. This spec defines behavior; if the three disagree, this spec wins.
 
 ## 10. Error handling
 
@@ -249,7 +263,9 @@ Treat pasted jobs, uploaded files and model responses as untrusted. Parse files 
 
 Follows the project's test-first rule for new behavior.
 
-- **Test-first, deterministic code:** eligibility rule table, exact quote verification and recognition, missing profile facts, separation of permission and visa status and of preferences and eligibility, evidence ownership and confirmation, sanitization, skipped-status history, current-user scoping and stale detection.
+- **Test-first, deterministic code:** Eligibility rule table, exact quote verification and recognition, missing profile facts, separation of preferences from Eligibility, evidence ownership and confirmation, sanitization, skipped-status history, current-user scoping and stale detection.
+- **Work rights:** verify that only the explicit shortcut confirms all three facts; changing residency or a visa note alone leaves the other facts unchanged. Verify that restricted permission can be unknown, and no sponsorship to start cannot pass a condition that also rules out future sponsorship.
+- **Graduation and experience:** test a newer master's versus an older bachelor's, both with and without a degree level in the Job condition; expected dates accepted by the Job versus a completed-graduation requirement; an explicit reference date versus a date-of-assessment fallback across a day boundary; a month-only date that straddles the cutoff; an inclusive experience cap; and an incomparable experience scope.
 - **Privacy and lifecycle:** assert upload, paste and input edits make no provider calls; each explicit provider action sends only its needed inputs. Test duplicate warnings without blocking, independent jobs and multiple attempts, submitted CV pinning, archive and deletion markers, evidence survival, corrected job fields, and portable export without a restore promise.
 - **Fit failures and freshness:** invalid, foreign or unconfirmed citations yield `unable_to_assess`, not `none`; empty inputs and provider errors do not fabricate a fit result. Withdraw an Evidence Item while a request is in flight and verify the obsolete response is discarded without replacing a newer result or triggering a rerun. Verify that changing a job condition updates the local check without a provider call.
 - **Ownership:** test with two candidates even though the UI exposes only one. An Application referencing the other candidate's CV fails like a missing reference and leaves neither an Application nor a history event.
@@ -278,7 +294,7 @@ These are facts or choices not settled during design. They must be resolved in p
 1. **Java SDK for the model provider.** Not verified whether an official Anthropic Java SDK exists and is suitable; if not, the gateway calls the HTTP API directly. Confirm against current documentation.
 2. **Java version and Spring Boot version.** Pick the current LTS and a supported Spring Boot release at planning time.
 3. **File storage.** Database blob versus local directory for CV files; default to a local directory behind a small storage interface.
-4. **Eligibility rule table.** Review recognizable restriction phrases and comparisons against explicit self-reported permission facts using real postings; do not infer rights from visa labels or turn unsupported phrases into failures.
+4. **Eligibility rule table.** Use representative Hong Kong postings to validate which work-rights, graduation-window, and experience-cap phrases can be recognized deterministically. Preserve the supported comparisons and unknown cases in §7.5; unsupported phrases must not become failures.
 5. **Extraction-quality set.** Which postings, and under what terms, are kept as test data.
 6. **Portable export format and deletion details.** Choose formats and minimal CV deletion-marker fields; restore/import is not in scope.
 7. **Preference and language comparisons.** Define conservative comparable values and unknown cases for the initial rule set; do not introduce a fit band.
